@@ -18,10 +18,18 @@
  */
 
 use OrangeHRM\Core\Traits\EventDispatcherTrait;
+use OrangeHRM\Core\Traits\ORM\EntityManagerTrait;
 use OrangeHRM\Core\Traits\ServiceContainerTrait;
+use OrangeHRM\Entity\Config;
+use OrangeHRM\Framework\Console\Console;
+use OrangeHRM\Framework\Console\ConsoleConfigurationInterface;
+use OrangeHRM\Framework\Console\Scheduling\CommandInfo;
+use OrangeHRM\Framework\Console\Scheduling\Schedule;
+use OrangeHRM\Framework\Console\Scheduling\SchedulerConfigurationInterface;
 use OrangeHRM\Framework\Http\Request;
 use OrangeHRM\Framework\PluginConfigurationInterface;
 use OrangeHRM\Framework\Services;
+use OrangeHRM\Leave\Command\SlackDailyLeaveDigestCommand;
 use OrangeHRM\Leave\Service\HolidayService;
 use OrangeHRM\Leave\Service\LeaveConfigurationService;
 use OrangeHRM\Leave\Service\LeaveEntitlementService;
@@ -32,10 +40,14 @@ use OrangeHRM\Leave\Service\WorkScheduleService;
 use OrangeHRM\Leave\Service\WorkWeekService;
 use OrangeHRM\Leave\Subscriber\LeaveEventSubscriber;
 
-class LeavePluginConfiguration implements PluginConfigurationInterface
+class LeavePluginConfiguration implements
+    PluginConfigurationInterface,
+    ConsoleConfigurationInterface,
+    SchedulerConfigurationInterface
 {
     use ServiceContainerTrait;
     use EventDispatcherTrait;
+    use EntityManagerTrait;
 
     /**
      * @inheritDoc
@@ -76,5 +88,38 @@ class LeavePluginConfiguration implements PluginConfigurationInterface
         );
 
         $this->getEventDispatcher()->addSubscriber(new LeaveEventSubscriber());
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function registerCommands(Console $console): void
+    {
+        $console->add(new SlackDailyLeaveDigestCommand());
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function schedule(Schedule $schedule): void
+    {
+        // Check if Slack digest is enabled
+        $config = $this->getEntityManager()
+            ->getRepository(Config::class)
+            ->find('slack_digest_enabled');
+
+        if ($config && ($config->getValue() === '1' || $config->getValue() === 'true')) {
+            // Get configured time (default: 9:00 AM)
+            $timeConfig = $this->getEntityManager()
+                ->getRepository(Config::class)
+                ->find('slack_digest_time');
+
+            $time = $timeConfig ? $timeConfig->getValue() : '09:00';
+            [$hour, $minute] = explode(':', $time);
+
+            // Schedule daily at configured time (cron format: minute hour * * *)
+            $schedule->add(new CommandInfo('orangehrm:slack-daily-leave-digest'))
+                ->cron("$minute $hour * * *");
+        }
     }
 }
