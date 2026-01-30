@@ -11,7 +11,23 @@ This integration sends a daily digest message to a Slack channel listing all emp
 3. Create a new webhook and select the channel where you want to receive notifications
 4. Copy the webhook URL (e.g., `https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX`)
 
+**Important Security Notes:**
+- The webhook URL must start with `https://hooks.slack.com/` for security validation
+- Keep your webhook URL private - anyone with access can post to your channel
+- SSL certificate verification is enabled by default for secure communication
+
 ### 2. Configure OrangeHRM Database Settings
+
+#### Option A: Using the provided SQL script (Recommended)
+```bash
+# Edit the SQL script and replace YOUR_WEBHOOK_URL_HERE with your actual webhook URL
+nano slack_integration_setup.sql
+
+# Run the script
+mysql -u username -p database_name < slack_integration_setup.sql
+```
+
+#### Option B: Manual SQL commands
 Add the following configuration entries to the `hs_hr_config` table in your OrangeHRM database:
 
 ```sql
@@ -42,6 +58,17 @@ You can manually trigger the digest command for testing:
 cd /path/to/orangehrm
 php bin/console orangehrm:slack-daily-leave-digest
 ```
+
+**Expected Outputs:**
+- Success: "Daily leave digest sent to Slack successfully"
+- No config: "Slack webhook URL is not configured"
+- Already sent: "Daily digest already sent today"
+- Disabled: "Slack daily digest is not enabled"
+
+**Testing Tips:**
+1. Use `slack_integration_test_queries.sql` to verify what data will be included
+2. To test multiple sends in one day, reset the last sent date (see SQL script)
+3. Check logs at `/path/to/orangehrm/src/log/orangehrm.log` for detailed information
 
 ## Message Format
 The Slack message will look like this:
@@ -110,6 +137,9 @@ DELETE FROM hs_hr_config WHERE name = 'slack_digest_last_sent_date';
 - `src/plugins/orangehrmLeavePlugin/Service/LeaveDigestService.php` - Builds the daily digest message
 - `src/plugins/orangehrmLeavePlugin/Command/SlackDailyLeaveDigestCommand.php` - CLI command for sending digest
 - `src/plugins/orangehrmLeavePlugin/config/LeavePluginConfiguration.php` - Updated to register command and schedule
+- `slack_integration_setup.sql` - SQL script for easy configuration
+- `slack_integration_test_queries.sql` - SQL queries for testing and verification
+- `SLACK_INTEGRATION.md` - This documentation file
 
 ### Database Query
 The digest includes all leaves with status:
@@ -120,3 +150,10 @@ Excludes:
 - `LEAVE_STATUS_LEAVE_REJECTED` (-1)
 - `LEAVE_STATUS_LEAVE_CANCELLED` (0)
 - `LEAVE_STATUS_LEAVE_PENDING_APPROVAL` (1)
+
+### Security Features
+- SSL certificate verification enabled for all Slack webhook requests
+- Webhook URL validation ensures only valid Slack URLs are accepted
+- Time format validation prevents malformed cron schedules
+- Proper error handling and logging throughout
+- Empty employee name handling with fallback text
