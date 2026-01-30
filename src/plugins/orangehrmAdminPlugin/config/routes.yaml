@@ -651,3 +651,8 @@ apiv2_admin_slack_integration_test:
   methods: [ POST ]
   defaults:
     _api: OrangeHRM\Admin\Api\SlackIntegrationTestAPI
+
+admin_slack_integration:
+  path: /admin/slackIntegration
+  controller: OrangeHRM\Admin\Controller\ViewSlackIntegrationController::handle
+  methods: [ GET ]
