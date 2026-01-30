@@ -635,3 +635,19 @@ admin_ldap_configuration:
   path: /admin/ldapConfiguration
   controller: OrangeHRM\Admin\Controller\LdapConfigurationController::handle
   methods: [ GET ]
+
+# Slack Integration routes
+apiv2_admin_slack_integration:
+  path: /api/v2/admin/slack-integration
+  controller: OrangeHRM\Core\Controller\Rest\V2\GenericRestController::handle
+  methods: [ GET, PUT ]
+  defaults:
+    id: 0
+    _api: OrangeHRM\Admin\Api\SlackIntegrationAPI
+
+apiv2_admin_slack_integration_test:
+  path: /api/v2/admin/slack-integration-test
+  controller: OrangeHRM\Core\Controller\Rest\V2\GenericRestController::handle
+  methods: [ POST ]
+  defaults:
+    _api: OrangeHRM\Admin\Api\SlackIntegrationTestAPI
