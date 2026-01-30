@@ -46,12 +46,13 @@ class LeaveDigestService
     /**
      * Build the daily leave digest message for today
      *
+     * @param array $leaveTypeFilter Optional array of leave type IDs to filter
      * @return string Formatted message for Slack
      */
-    public function buildDailyDigestMessage(): string
+    public function buildDailyDigestMessage(array $leaveTypeFilter = []): string
     {
         $today = $this->getDateTimeHelper()->getNow();
-        $leavesForToday = $this->getLeavesForDate($today);
+        $leavesForToday = $this->getLeavesForDate($today, $leaveTypeFilter);
 
         if (empty($leavesForToday)) {
             return "🎉 Everyone is working today!";
@@ -84,9 +85,10 @@ class LeaveDigestService
      * Get all approved leaves that overlap with the given date
      *
      * @param DateTime $date
+     * @param array $leaveTypeFilter Optional array of leave type IDs to filter
      * @return Leave[]
      */
-    private function getLeavesForDate(DateTime $date): array
+    private function getLeavesForDate(DateTime $date, array $leaveTypeFilter = []): array
     {
         $qb = $this->getEntityManager()
             ->getRepository(Leave::class)
@@ -103,6 +105,12 @@ class LeaveDigestService
             ->orderBy('lt.name', 'ASC')
             ->addOrderBy('e.lastName', 'ASC')
             ->addOrderBy('e.firstName', 'ASC');
+
+        // Apply leave type filter if provided
+        if (!empty($leaveTypeFilter)) {
+            $qb->andWhere($qb->expr()->in('lt.id', ':leaveTypes'))
+               ->setParameter('leaveTypes', $leaveTypeFilter);
+        }
 
         return $qb->getQuery()->getResult();
     }

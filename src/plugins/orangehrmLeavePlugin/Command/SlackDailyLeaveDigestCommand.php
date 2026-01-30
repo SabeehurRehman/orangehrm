@@ -19,12 +19,11 @@
 
 namespace OrangeHRM\Leave\Command;
 
+use DateTime;
 use DateTimeZone;
-use OrangeHRM\Core\Service\DateTimeHelperService;
-use OrangeHRM\Core\Traits\ORM\EntityManagerTrait;
-use OrangeHRM\Core\Traits\Service\ConfigServiceTrait;
+use OrangeHRM\Admin\Service\SlackIntegrationService;
 use OrangeHRM\Core\Traits\Service\DateTimeHelperTrait;
-use OrangeHRM\Entity\Config;
+use OrangeHRM\Entity\SlackIntegration;
 use OrangeHRM\Framework\Console\Command;
 use OrangeHRM\Leave\Service\LeaveDigestService;
 use OrangeHRM\Leave\Service\SlackService;
@@ -33,16 +32,11 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * Command to send daily leave digest to Slack
+ * Updated to read configuration from ohrm_slack_integration table
  */
 class SlackDailyLeaveDigestCommand extends Command
 {
-    use ConfigServiceTrait;
     use DateTimeHelperTrait;
-    use EntityManagerTrait;
-
-    private const CONFIG_KEY_WEBHOOK_URL = 'slack_webhook_url';
-    private const CONFIG_KEY_ENABLED = 'slack_digest_enabled';
-    private const CONFIG_KEY_LAST_SENT_DATE = 'slack_digest_last_sent_date';
 
     /**
      * @inheritDoc
@@ -65,37 +59,45 @@ class SlackDailyLeaveDigestCommand extends Command
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        // Check if Slack integration is enabled
-        if (!$this->isSlackDigestEnabled()) {
+        // Get Slack Integration settings from database
+        $slackIntegrationService = new SlackIntegrationService();
+        $slackIntegration = $slackIntegrationService->getSlackIntegration();
+
+        // Check if Slack integration is configured and enabled
+        if (!$slackIntegration instanceof SlackIntegration || !$slackIntegration->isEnabled()) {
             $this->getIO()->warning('Slack daily digest is not enabled');
             return self::SUCCESS;
         }
 
-        // Get Slack webhook URL from config
-        $webhookUrl = $this->getSlackWebhookUrl();
+        // Get Slack webhook URL from settings
+        $webhookUrl = $slackIntegration->getWebhookUrl();
         if (empty($webhookUrl)) {
             $this->getIO()->error('Slack webhook URL is not configured');
             return self::FAILURE;
         }
 
         // Check if already sent today (idempotency)
-        if ($this->isAlreadySentToday()) {
+        if ($this->isAlreadySentToday($slackIntegration)) {
             $this->getIO()->note('Daily digest already sent today');
             return self::SUCCESS;
         }
 
         try {
-            // Build the digest message
+            // Build the digest message with optional leave type filtering
             $leaveDigestService = new LeaveDigestService();
-            $message = $leaveDigestService->buildDailyDigestMessage();
+            $leaveTypes = $slackIntegration->getLeaveTypesArray();
+            $message = $leaveDigestService->buildDailyDigestMessage($leaveTypes);
 
             // Send to Slack
             $slackService = new SlackService();
             $success = $slackService->sendMessage($webhookUrl, $message);
 
             if ($success) {
-                // Update last sent date
-                $this->updateLastSentDate();
+                // Update last sent date in database
+                $slackIntegrationService->updateLastSentDate(
+                    $slackIntegration,
+                    $this->getDateTimeHelper()->getNow()
+                );
                 $this->getIO()->success('Daily leave digest sent to Slack successfully');
                 return self::SUCCESS;
             } else {
@@ -109,93 +111,26 @@ class SlackDailyLeaveDigestCommand extends Command
     }
 
     /**
-     * Check if Slack digest is enabled
-     *
-     * @return bool
-     */
-    private function isSlackDigestEnabled(): bool
-    {
-        $config = $this->getConfigValue(self::CONFIG_KEY_ENABLED);
-        return $config === '1' || $config === 'true';
-    }
-
-    /**
-     * Get Slack webhook URL from configuration
-     *
-     * @return string|null
-     */
-    private function getSlackWebhookUrl(): ?string
-    {
-        return $this->getConfigValue(self::CONFIG_KEY_WEBHOOK_URL);
-    }
-
-    /**
      * Check if digest was already sent today
+     * Uses configured timezone for comparison
      *
+     * @param SlackIntegration $slackIntegration
      * @return bool
      */
-    private function isAlreadySentToday(): bool
+    private function isAlreadySentToday(SlackIntegration $slackIntegration): bool
     {
-        $lastSentDate = $this->getConfigValue(self::CONFIG_KEY_LAST_SENT_DATE);
-        if (empty($lastSentDate)) {
+        $lastSentDate = $slackIntegration->getLastSentDate();
+        if (!$lastSentDate instanceof DateTime) {
             return false;
         }
 
+        // Get today's date in the configured timezone
+        $timezone = new DateTimeZone($slackIntegration->getTimezone());
         $today = $this->getDateTimeHelper()
             ->getNow()
-            ->setTimezone(new DateTimeZone(DateTimeHelperService::TIMEZONE_UTC))
+            ->setTimezone($timezone)
             ->format('Y-m-d');
 
-        return $lastSentDate === $today;
-    }
-
-    /**
-     * Update the last sent date to today
-     */
-    private function updateLastSentDate(): void
-    {
-        $today = $this->getDateTimeHelper()
-            ->getNow()
-            ->setTimezone(new DateTimeZone(DateTimeHelperService::TIMEZONE_UTC))
-            ->format('Y-m-d');
-
-        $this->setConfigValue(self::CONFIG_KEY_LAST_SENT_DATE, $today);
-    }
-
-    /**
-     * Get configuration value from database
-     *
-     * @param string $key
-     * @return string|null
-     */
-    private function getConfigValue(string $key): ?string
-    {
-        $config = $this->getEntityManager()
-            ->getRepository(Config::class)
-            ->find($key);
-
-        return $config?->getValue();
-    }
-
-    /**
-     * Set configuration value in database
-     *
-     * @param string $key
-     * @param string $value
-     */
-    private function setConfigValue(string $key, string $value): void
-    {
-        $config = $this->getEntityManager()
-            ->getRepository(Config::class)
-            ->find($key);
-
-        if (!$config) {
-            $config = new Config();
-            $config->setName($key);
-        }
-
-        $config->setValue($value);
-        $this->getEntityManager()->persist($config);
-        $this->getEntityManager()->flush();
+        return $lastSentDate->format('Y-m-d') === $today;
     }
 }

@@ -103,26 +103,22 @@ class LeavePluginConfiguration implements
      */
     public function schedule(Schedule $schedule): void
     {
-        // Check if Slack digest is enabled
-        $config = $this->getEntityManager()
-            ->getRepository(Config::class)
-            ->find('slack_digest_enabled');
+        // Get Slack Integration settings from database
+        $slackIntegration = $this->getEntityManager()
+            ->getRepository(\OrangeHRM\Entity\SlackIntegration::class)
+            ->findOneBy([], ['id' => 'ASC']);
 
-        if ($config && ($config->getValue() === '1' || $config->getValue() === 'true')) {
-            // Get configured time (default: 9:00 AM)
-            $timeConfig = $this->getEntityManager()
-                ->getRepository(Config::class)
-                ->find('slack_digest_time');
-
-            $time = $timeConfig ? $timeConfig->getValue() : '09:00';
+        // Only schedule if Slack integration is configured and enabled
+        if ($slackIntegration && $slackIntegration->isEnabled()) {
+            $digestTime = $slackIntegration->getDigestTime();
             
             // Validate time format (HH:MM)
-            if (!preg_match('/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/', $time)) {
+            if (!preg_match('/^([0-1][0-9]|2[0-3]):[0-5][0-9]$/', $digestTime)) {
                 // Invalid format, use default
-                $time = '09:00';
+                $digestTime = '09:00';
             }
             
-            [$hour, $minute] = explode(':', $time);
+            [$hour, $minute] = explode(':', $digestTime);
 
             // Schedule daily at configured time (cron format: minute hour * * *)
             $schedule->add(new CommandInfo('orangehrm:slack-daily-leave-digest'))
