@@ -159,7 +159,12 @@ class LeaveDigestService
     private function getEmployeeFullName(Leave $leave): string
     {
         $employee = $leave->getEmployee();
-        return trim($employee->getFirstName() . ' ' . $employee->getLastName());
+        $firstName = $employee->getFirstName() ?? '';
+        $lastName = $employee->getLastName() ?? '';
+        $fullName = trim($firstName . ' ' . $lastName);
+        
+        // Fallback if both names are empty
+        return empty($fullName) ? 'Unknown Employee' : $fullName;
     }
 
     /**

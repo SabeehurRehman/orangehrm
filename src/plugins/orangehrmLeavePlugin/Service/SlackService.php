@@ -43,13 +43,19 @@ class SlackService
             return false;
         }
 
+        // Validate webhook URL format
+        if (!$this->isValidSlackWebhookUrl($webhookUrl)) {
+            $this->getLogger()->error('Invalid Slack webhook URL format');
+            return false;
+        }
+
         try {
-            $client = new Client(['verify' => false]);
+            // Enable SSL verification for security
+            $client = new Client();
             $response = $client->post(
                 $webhookUrl,
                 [
                     'json' => ['text' => $message],
-                    'headers' => ['Content-Type' => 'application/json'],
                 ]
             );
 
@@ -66,5 +72,22 @@ class SlackService
             $this->getLogger()->error($e->getTraceAsString());
             return false;
         }
+    }
+
+    /**
+     * Validate if the URL is a valid Slack webhook URL
+     *
+     * @param string $url URL to validate
+     * @return bool True if valid, false otherwise
+     */
+    private function isValidSlackWebhookUrl(string $url): bool
+    {
+        // Check if URL is valid
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            return false;
+        }
+
+        // Check if URL starts with https://hooks.slack.com/
+        return str_starts_with($url, 'https://hooks.slack.com/');
     }
 }
